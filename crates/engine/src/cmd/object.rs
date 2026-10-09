@@ -132,7 +132,15 @@ pub fn specs() -> Vec<CommandSpec> {
         cmd!("object.ungroup", "Ungroup", ["Object"], Some("Cmd+Shift+G"), "{ids?}", has_selection, ungroup),
         cmd!("object.lock", "Lock", ["Object"], Some("Cmd+L"), "{ids?}", has_selection, |s, p| set_flag(s, p, |i| i.locked = true, true)),
         cmd!("object.unlockAll", "Unlock All on Spread", ["Object"], Some("Cmd+Alt+L"), "{}", has_doc, |s, _| all_flag(s, |i| i.locked = false)),
-        cmd!("object.unlock", "Unlock", [], None, "{ids} — unlock these items only (locked items can't be selected, so ids are required)", has_doc, |s, p| set_flag(s, p, |i| i.locked = false, false)),
+        cmd!(
+            "object.unlock",
+            "Unlock",
+            [],
+            None,
+            "{ids} — unlock these items only (locked items can't be selected, so ids are required)",
+            has_doc,
+            |s, p| set_flag(s, p, |i| i.locked = false, false)
+        ),
         cmd!("object.hide", "Hide", ["Object"], Some("Cmd+3"), "{ids?}", has_selection, |s, p| set_flag(s, p, |i| i.hidden = true, true)),
         cmd!("object.showAll", "Show All on Spread", ["Object"], Some("Cmd+Alt+3"), "{}", has_doc, |s, _| all_flag(s, |i| i.hidden = false)),
         cmd!(

@@ -14,20 +14,18 @@ use crate::{Result, Session};
 pub fn specs() -> Vec<CommandSpec> {
     vec![
         cmd!(noundo "font.add", "Add Font", [], None,
-            "{base64, name?} — load a TTF/OTF/TTC into this session's shared fonts (the web app can't read fonts from disk) → {faces: new faces, families: [new family names], name}; faces is 0 when the file isn't a font or every face was already loaded",
+            "{base64, name?} — load a TTF/OTF/TTC into this session's shared fonts (the web app can't read fonts from disk) → {faces: new faces, families: [the file's family names, loaded or not], name}; faces is 0 when the file isn't a font or every face was already loaded",
             always, |s, p| {
             let b64 = str_param(p, "base64").ok_or_else(|| bad("font.add", "missing base64"))?;
             let bytes = super::base64_decode(b64);
             if bytes.is_empty() {
                 return Err(bad("font.add", "empty or invalid base64"));
             }
-            let db = designcraft_fonts::FontDb::global();
-            let before: std::collections::BTreeSet<String> = db.families().into_iter().collect();
-            let faces = db.add_font(bytes);
+            let families = designcraft_fonts::FontDb::families_in(&bytes);
+            let faces = designcraft_fonts::FontDb::global().add_font(bytes);
             if faces > 0 {
                 s.cache.clear();
             }
-            let families: Vec<String> = db.families().into_iter().filter(|f| !before.contains(f)).collect();
             Ok(json!({"faces": faces, "families": families, "name": str_param(p, "name").unwrap_or("font")}))
         }),
         cmd!(query "font.list", "Fonts in Document", [], None, "{} → [{family, style, characters, missing, styleMissing, source: bundled|installed|document|added (null when missing)}] (missing first)", has_doc, |s, _| {

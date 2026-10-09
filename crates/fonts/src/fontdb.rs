@@ -825,6 +825,19 @@ impl FontDb {
         self.scoped(0).styles(family)
     }
 
+    /// The family names in a font file (TTF/OTF/TTC bytes), in face order without repeats; empty
+    /// when the bytes aren't a font. Doesn't load anything.
+    pub fn families_in(bytes: &[u8]) -> Vec<String> {
+        let data = Arc::new(bytes.to_vec());
+        let mut out: Vec<String> = Vec::new();
+        for (_, family, _, _) in enumerate_faces(&data) {
+            if !out.contains(&family) {
+                out.push(family);
+            }
+        }
+        out
+    }
+
     /// Add a user font (TTF/OTF/TTC bytes). Returns the number of faces added (0 if unparseable or
     /// every face was already present).
     pub fn add_font(&self, bytes: Vec<u8>) -> usize {
