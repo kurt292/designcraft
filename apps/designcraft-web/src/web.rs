@@ -55,7 +55,12 @@ pub fn start() {
                         log::info!("designcraft-web: wgpu backend {:?}", rs.adapter.get_info().backend);
                     }
                     let inbox: Inbox = Inbox::default();
-                    let mut app = DesignApp::new(Session::new(), services(inbox.clone(), cc.egui_ctx.clone()));
+                    // `window.designcraft`: the control channel as promises (see api.rs).
+                    let (control_tx, control_rx) = std::sync::mpsc::channel();
+                    let mut app = DesignApp::new(Session::new(), services(inbox.clone(), cc.egui_ctx.clone())).with_control(control_rx);
+                    if let Err(e) = crate::api::install(control_tx, cc.egui_ctx.clone()) {
+                        log::error!("designcraft-web: couldn't publish window.designcraft: {e:?}");
+                    }
                     if query().contains("sample") {
                         let _ = app.run("file.newSample", serde_json::json!({}));
                     }
@@ -101,6 +106,7 @@ impl eframe::App for WebShell {
             });
         }
         self.app.logic(ctx);
+        crate::api::poll_replies();
     }
 
     fn raw_input_hook(&mut self, _ctx: &egui::Context, raw: &mut egui::RawInput) {

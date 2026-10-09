@@ -8,11 +8,28 @@ use designcraft_doc::{CharAttrs, Document, Story};
 use designcraft_fonts::FontSource;
 use serde_json::{Value, json};
 
-use super::{CommandSpec, bad, cmd, has_doc, str_param};
+use super::{CommandSpec, always, bad, cmd, has_doc, str_param};
 use crate::{Result, Session};
 
 pub fn specs() -> Vec<CommandSpec> {
     vec![
+        cmd!(noundo "font.add", "Add Font", [], None,
+            "{base64, name?} — load a TTF/OTF/TTC into this session's shared fonts (the web app can't read fonts from disk) → {faces: new faces, families: [new family names], name}; faces is 0 when the file isn't a font or every face was already loaded",
+            always, |s, p| {
+            let b64 = str_param(p, "base64").ok_or_else(|| bad("font.add", "missing base64"))?;
+            let bytes = super::base64_decode(b64);
+            if bytes.is_empty() {
+                return Err(bad("font.add", "empty or invalid base64"));
+            }
+            let db = designcraft_fonts::FontDb::global();
+            let before: std::collections::BTreeSet<String> = db.families().into_iter().collect();
+            let faces = db.add_font(bytes);
+            if faces > 0 {
+                s.cache.clear();
+            }
+            let families: Vec<String> = db.families().into_iter().filter(|f| !before.contains(f)).collect();
+            Ok(json!({"faces": faces, "families": families, "name": str_param(p, "name").unwrap_or("font")}))
+        }),
         cmd!(query "font.list", "Fonts in Document", [], None, "{} → [{family, style, characters, missing, styleMissing, source: bundled|installed|document|added (null when missing)}] (missing first)", has_doc, |s, _| {
             Ok(Value::Array(list(&s.doc()?.doc)))
         }),
@@ -160,6 +177,24 @@ fn replace(s: &mut Session, p: &Value) -> Result<Value> {
         }
         Ok(json!({"changed": changed}))
     })
+}
+
+#[cfg(test)]
+mod add_tests {
+    use serde_json::json;
+
+    use crate::Session;
+
+    #[test]
+    fn font_add_rejects_missing_or_invalid_bytes_and_reports_non_fonts() {
+        let mut s = Session::new();
+        assert!(s.execute("font.add", &json!({})).is_err(), "base64 is required");
+        assert!(s.execute("font.add", &json!({"base64": "!!!"})).is_err(), "invalid base64");
+        let r = s.execute("font.add", &json!({"base64": "bm90IGEgZm9udA==", "name": "x.ttf"})).unwrap();
+        assert_eq!(r["faces"], 0, "not a font: no faces, no error");
+        assert_eq!(r["families"].as_array().map(Vec::len), Some(0));
+        assert_eq!(r["name"], "x.ttf");
+    }
 }
 
 #[cfg(test)]
