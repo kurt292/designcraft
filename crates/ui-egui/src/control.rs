@@ -221,6 +221,9 @@ pub fn handle(app: &mut DesignApp, ctx: &egui::Context, req: &ControlRequest) ->
             ok(Value::Null)
         }
         "ui.set" => {
+            if let Some(b) = p.get("embedded").and_then(Value::as_bool) {
+                app.ui.embedded = b;
+            }
             let mut r = Ok(Value::Null);
             if let Some(b) = s("brightness") {
                 r = app.run("window.brightness", json!({"brightness": b}));

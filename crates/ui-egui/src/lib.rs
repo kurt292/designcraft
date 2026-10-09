@@ -162,6 +162,9 @@ pub struct UiState {
     /// Panels torn off the dock into their own floating windows: (panel id, top-left position).
     pub floating: Vec<(String, [f32; 2])>,
     pub dock_expanded: bool,
+    /// Embedded in a host page (the Local Roots compositor): no search, workspace switcher, share or
+    /// Discord in the app bar, no document tabs for a single document, no Pages tab. `ui.set {embedded}`.
+    pub embedded: bool,
     pub units: Unit,
     pub workspace: String,
     /// Window › Workspace › New Workspace: saved panel arrangements.
@@ -210,6 +213,7 @@ impl Default for UiState {
     fn default() -> Self {
         UiState {
             brightness: theme::Brightness::MediumDark,
+            embedded: false,
             screen_mode: ScreenMode::Normal,
             frame_edges: true,
             rulers: true,
@@ -701,7 +705,8 @@ impl DesignApp {
                 chrome::start_screen(self, ui);
                 return;
             }
-            if !presenting {
+            // Embedded hosts show one document at a time: no tab strip for it.
+            if !presenting && !(self.ui.embedded && self.session.documents().len() <= 1) {
                 chrome::doc_tabs(self, ui);
             }
             if self.split && !presenting {

@@ -61,6 +61,10 @@ pub fn show(app: &mut DesignApp, ui: &mut egui::Ui) {
                 ui.painter().rect_filled(strip, 0.0, t.tab_strip);
                 let mut x = strip.min.x;
                 for (id, label, _) in DOCK_TABS {
+                    // A single-page host has no use for the Pages panel.
+                    if app.ui.embedded && *id == "pages" {
+                        continue;
+                    }
                     let active = app.ui.dock_tab == *id;
                     let g = crate::rtl::plain(
                         ui.ctx(),

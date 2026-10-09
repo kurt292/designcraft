@@ -36,69 +36,77 @@ pub fn app_bar(app: &mut DesignApp, ui: &mut egui::Ui) {
                 menus_end = ui.min_rect().max.x;
                 ui.with_layout(egui::Layout::right_to_left(egui::Align::Center), |ui| {
                     ui.add_space(4.0);
-                    // Search field.
-                    let (r, _) = ui.allocate_exact_size(vec2(125.0, 18.0), Sense::click());
-                    ui.painter().rect(r, 1.0, t.input, Stroke::new(1.0, t.field_border), egui::StrokeKind::Inside);
-                    icons::paint(ui.painter(), egui::Rect::from_min_size(r.min + vec2(3.0, 2.0), vec2(14.0, 14.0)), "search", t.icon);
-                    crate::rtl::paint(
-                        ui.painter(),
-                        r.min + vec2(20.0, 9.0),
-                        egui::Align2::LEFT_CENTER,
-                        crate::i18n::tr(&app.ui.language, "Search"),
-                        egui::FontId::proportional(11.0),
-                        t.text_dim,
-                    );
-                    ui.add_space(8.0);
-                    let current = app.ui.workspace.clone();
-                    let shown = crate::i18n::workspace_name(&app.ui.language, &current);
-                    ui.menu_button(crate::rtl::widget(ui, egui::RichText::new(format!("{shown} ▾")).font(semibold(11.5)).color(t.text)), |ui| {
-                        let customs: Vec<String> = app.ui.custom_workspaces.iter().map(|w| w.name.clone()).collect();
-                        for w in
-                            ["Essentials", "Advanced", "Book", "Digital Publishing", "Interactive for PDF", "Printing and Proofing", "Typography"]
-                                .into_iter()
-                                .map(str::to_string)
-                                .chain(customs.iter().cloned())
-                        {
-                            if ui.selectable_label(w == current, crate::rtl::widget(ui, crate::i18n::workspace_name(&app.ui.language, &w))).clicked()
+                    if !app.ui.embedded {
+                        // Search field.
+                        let (r, _) = ui.allocate_exact_size(vec2(125.0, 18.0), Sense::click());
+                        ui.painter().rect(r, 1.0, t.input, Stroke::new(1.0, t.field_border), egui::StrokeKind::Inside);
+                        icons::paint(ui.painter(), egui::Rect::from_min_size(r.min + vec2(3.0, 2.0), vec2(14.0, 14.0)), "search", t.icon);
+                        crate::rtl::paint(
+                            ui.painter(),
+                            r.min + vec2(20.0, 9.0),
+                            egui::Align2::LEFT_CENTER,
+                            crate::i18n::tr(&app.ui.language, "Search"),
+                            egui::FontId::proportional(11.0),
+                            t.text_dim,
+                        );
+                        ui.add_space(8.0);
+                        let current = app.ui.workspace.clone();
+                        let shown = crate::i18n::workspace_name(&app.ui.language, &current);
+                        ui.menu_button(crate::rtl::widget(ui, egui::RichText::new(format!("{shown} ▾")).font(semibold(11.5)).color(t.text)), |ui| {
+                            let customs: Vec<String> = app.ui.custom_workspaces.iter().map(|w| w.name.clone()).collect();
+                            for w in
+                                ["Essentials", "Advanced", "Book", "Digital Publishing", "Interactive for PDF", "Printing and Proofing", "Typography"]
+                                    .into_iter()
+                                    .map(str::to_string)
+                                    .chain(customs.iter().cloned())
                             {
-                                let _ = app.run("window.workspace", json!({"name": w}));
+                                if ui
+                                    .selectable_label(w == current, crate::rtl::widget(ui, crate::i18n::workspace_name(&app.ui.language, &w)))
+                                    .clicked()
+                                {
+                                    let _ = app.run("window.workspace", json!({"name": w}));
+                                    ui.close();
+                                }
+                            }
+                            ui.separator();
+                            if ui
+                                .button(crate::rtl::widget(
+                                    ui,
+                                    format!(
+                                        "{} {}",
+                                        crate::i18n::tr(&app.ui.language, "Reset"),
+                                        crate::i18n::workspace_name(&app.ui.language, &current)
+                                    ),
+                                ))
+                                .clicked()
+                            {
+                                let _ = app.run("window.resetWorkspace", json!({}));
                                 ui.close();
                             }
-                        }
-                        ui.separator();
-                        if ui
-                            .button(crate::rtl::widget(
-                                ui,
-                                format!("{} {}", crate::i18n::tr(&app.ui.language, "Reset"), crate::i18n::workspace_name(&app.ui.language, &current)),
-                            ))
-                            .clicked()
-                        {
-                            let _ = app.run("window.resetWorkspace", json!({}));
-                            ui.close();
-                        }
-                        if ui.button(crate::rtl::widget(ui, crate::i18n::tr(&app.ui.language, "New Workspace…"))).clicked() {
-                            let _ = app.run("window.newWorkspace", json!({}));
-                            ui.close();
-                        }
-                        if !customs.is_empty() {
-                            ui.menu_button(crate::rtl::widget(ui, crate::i18n::tr(&app.ui.language, "Delete Workspace")), |ui| {
-                                for w in &customs {
-                                    if ui.button(w).clicked() {
-                                        let _ = app.run("window.deleteWorkspace", json!({"name": w}));
-                                        ui.close();
+                            if ui.button(crate::rtl::widget(ui, crate::i18n::tr(&app.ui.language, "New Workspace…"))).clicked() {
+                                let _ = app.run("window.newWorkspace", json!({}));
+                                ui.close();
+                            }
+                            if !customs.is_empty() {
+                                ui.menu_button(crate::rtl::widget(ui, crate::i18n::tr(&app.ui.language, "Delete Workspace")), |ui| {
+                                    for w in &customs {
+                                        if ui.button(w).clicked() {
+                                            let _ = app.run("window.deleteWorkspace", json!({"name": w}));
+                                            ui.close();
+                                        }
                                     }
-                                }
-                            });
+                                });
+                            }
+                        });
+                        ui.add_space(6.0);
+                        if icons::button(ui, "share", 22.0, false, crate::i18n::tr(&app.ui.language, "Share")).clicked() {
+                            app.status("Export a PDF, IDML or package to share — no cloud account needed.");
                         }
-                    });
-                    ui.add_space(6.0);
-                    if icons::button(ui, "share", 22.0, false, crate::i18n::tr(&app.ui.language, "Share")).clicked() {
-                        app.status("Export a PDF, IDML or package to share — no cloud account needed.");
-                    }
-                    ui.add_space(8.0);
-                    // Always one click away: the ArtCraft community Discord.
-                    if crate::about::discord_button(ui, "Discord", vec2(78.0, 22.0)) {
-                        let _ = app.run("help.discord", json!({}));
+                        ui.add_space(8.0);
+                        // Always one click away: the ArtCraft community Discord.
+                        if crate::about::discord_button(ui, "Discord", vec2(78.0, 22.0)) {
+                            let _ = app.run("help.discord", json!({}));
+                        }
                     }
                     tools_start = ui.min_rect().min.x;
                 });
