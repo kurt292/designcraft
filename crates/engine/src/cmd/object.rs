@@ -132,6 +132,7 @@ pub fn specs() -> Vec<CommandSpec> {
         cmd!("object.ungroup", "Ungroup", ["Object"], Some("Cmd+Shift+G"), "{ids?}", has_selection, ungroup),
         cmd!("object.lock", "Lock", ["Object"], Some("Cmd+L"), "{ids?}", has_selection, |s, p| set_flag(s, p, |i| i.locked = true, true)),
         cmd!("object.unlockAll", "Unlock All on Spread", ["Object"], Some("Cmd+Alt+L"), "{}", has_doc, |s, _| all_flag(s, |i| i.locked = false)),
+        cmd!("object.unlock", "Unlock", [], None, "{ids} — unlock these items only (locked items can't be selected, so ids are required)", has_doc, |s, p| set_flag(s, p, |i| i.locked = false, false)),
         cmd!("object.hide", "Hide", ["Object"], Some("Cmd+3"), "{ids?}", has_selection, |s, p| set_flag(s, p, |i| i.hidden = true, true)),
         cmd!("object.showAll", "Show All on Spread", ["Object"], Some("Cmd+Alt+3"), "{}", has_doc, |s, _| all_flag(s, |i| i.hidden = false)),
         cmd!(
@@ -1937,6 +1938,28 @@ fn step_and_repeat(s: &mut Session, p: &Value) -> Result<Value> {
         *sel = Selection::items(all.clone());
         Ok(json!({"created": all.len() - ids.len()}))
     })
+}
+
+#[cfg(test)]
+mod unlock_tests {
+    use super::*;
+
+    #[test]
+    fn object_unlock_frees_only_the_given_items() {
+        let mut s = Session::new();
+        s.execute("file.new", &json!({})).unwrap();
+        let a = s.execute("frame.create", &json!({"rect": [0, 0, 50, 50]})).unwrap()["id"].as_u64().unwrap();
+        let b = s.execute("frame.create", &json!({"rect": [100, 0, 150, 50]})).unwrap()["id"].as_u64().unwrap();
+        s.execute("object.lock", &json!({"ids": [a, b]})).unwrap();
+        assert!(s.execute("object.unlock", &json!({})).is_err() || s.doc().unwrap().doc.item(ItemId(a)).unwrap().locked, "no ids: nothing to unlock");
+        s.execute("object.unlock", &json!({"ids": [a]})).unwrap();
+        let d = &s.doc().unwrap().doc;
+        assert!(!d.item(ItemId(a)).unwrap().locked, "a unlocked");
+        assert!(d.item(ItemId(b)).unwrap().locked, "b still locked");
+        // Unlocked items take commands again.
+        s.execute("transform.move", &json!({"dx": 10, "dy": 0, "ids": [a]})).unwrap();
+        assert!((s.doc().unwrap().doc.item(ItemId(a)).unwrap().bounds().x0 - 10.0).abs() < 1e-6);
+    }
 }
 
 #[cfg(test)]

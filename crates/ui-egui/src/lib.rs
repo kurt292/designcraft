@@ -787,6 +787,13 @@ impl DesignApp {
         self.perf.frame_ms = now_ms() - t0;
     }
 
+    /// Handle queued control requests now, outside the frame loop. Hosts whose frames may stop
+    /// (a browser tab in the background doesn't get animation frames) call this from a timer so
+    /// engine requests still get answered; requests that need a painted frame (screenshots) wait.
+    pub fn drain_control_now(&mut self, ctx: &egui::Context) {
+        self.drain_control(ctx);
+    }
+
     fn drain_control(&mut self, ctx: &egui::Context) {
         let Some(rx) = self.control_rx.take() else { return };
         while let Ok(req) = rx.try_recv() {

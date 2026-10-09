@@ -10,20 +10,30 @@
 //! The object is installed once the app has started; `window` then gets a `designcraft-ready`
 //! event and `designcraft.ready` is `true`. Every method of the desktop protocol works except the
 //! ones that need a window manager (`ui.resize`, `ui.focus`, `app.quit`).
+//!
+//! Requests are normally handled on the next frame. A tab in the background gets no animation
+//! frames, so a timer also drains the queue (`DesignApp::drain_control_now`) while anything is
+//! pending; only requests that need a painted frame (`ui.screenshot`) wait for one.
 
 use std::cell::RefCell;
+use std::rc::Rc;
 use std::sync::mpsc::{Receiver, Sender};
 
-use designcraft_ui_egui::{ControlRequest, ControlResponse};
+use designcraft_ui_egui::{ControlRequest, ControlResponse, DesignApp};
 use serde_json::{Value, json};
 use wasm_bindgen::prelude::*;
 
 type Pending = (Receiver<ControlResponse>, js_sys::Function, js_sys::Function);
 
+/// How long to wait for a frame before draining the queue from a timer.
+const PUMP_MS: i32 = 150;
+
 thread_local! {
     static TX: RefCell<Option<Sender<ControlRequest>>> = const { RefCell::new(None) };
     static PENDING: RefCell<Vec<Pending>> = const { RefCell::new(Vec::new()) };
     static CTX: RefCell<Option<egui::Context>> = const { RefCell::new(None) };
+    static APP: RefCell<Option<Rc<RefCell<DesignApp>>>> = const { RefCell::new(None) };
+    static PUMP_ARMED: RefCell<bool> = const { RefCell::new(false) };
 }
 
 fn to_js(v: &Value) -> JsValue {
@@ -54,13 +64,45 @@ fn request(method: String, params: JsValue) -> js_sys::Promise {
                 ctx.request_repaint();
             }
         });
+        arm_pump();
     })
 }
 
+/// Schedule one timer that drains the queue if no frame did it first; re-armed while requests
+/// are still pending.
+fn arm_pump() {
+    if PUMP_ARMED.with(|a| std::mem::replace(&mut *a.borrow_mut(), true)) {
+        return;
+    }
+    let Some(window) = web_sys::window() else { return };
+    let cb = Closure::once_into_js(|| {
+        PUMP_ARMED.with(|a| *a.borrow_mut() = false);
+        let still_pending = PENDING.with(|p| !p.borrow().is_empty());
+        if !still_pending {
+            return;
+        }
+        let app = APP.with(|a| a.borrow().clone());
+        let ctx = CTX.with(|c| c.borrow().clone());
+        if let (Some(app), Some(ctx)) = (app, ctx)
+            && let Ok(mut app) = app.try_borrow_mut()
+        {
+            app.drain_control_now(&ctx);
+        }
+        poll_replies();
+        if PENDING.with(|p| !p.borrow().is_empty()) {
+            arm_pump();
+        }
+    });
+    if window.set_timeout_with_callback_and_timeout_and_arguments_0(cb.unchecked_ref(), PUMP_MS).is_err() {
+        PUMP_ARMED.with(|a| *a.borrow_mut() = false);
+    }
+}
+
 /// Wire the channel to the app and publish `window.designcraft`.
-pub(crate) fn install(tx: Sender<ControlRequest>, ctx: egui::Context) -> Result<(), JsValue> {
+pub(crate) fn install(tx: Sender<ControlRequest>, ctx: egui::Context, app: Rc<RefCell<DesignApp>>) -> Result<(), JsValue> {
     TX.with(|t| *t.borrow_mut() = Some(tx));
     CTX.with(|c| *c.borrow_mut() = Some(ctx));
+    APP.with(|a| *a.borrow_mut() = Some(app));
     let window = web_sys::window().ok_or_else(|| JsValue::from_str("no window"))?;
     let api = js_sys::Object::new();
     let request_fn = Closure::<dyn Fn(JsValue, JsValue) -> js_sys::Promise>::new(|method: JsValue, params: JsValue| {
@@ -76,7 +118,7 @@ pub(crate) fn install(tx: Sender<ControlRequest>, ctx: egui::Context) -> Result<
     Ok(())
 }
 
-/// Settle the promises whose replies arrived (called every frame).
+/// Settle the promises whose replies arrived (called every frame and by the pump timer).
 pub(crate) fn poll_replies() {
     PENDING.with(|p| {
         p.borrow_mut().retain(|(rx, resolve, reject)| match rx.try_recv() {
