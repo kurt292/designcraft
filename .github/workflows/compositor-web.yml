@@ -1,0 +1,58 @@
+# Web build of this fork for the Local Roots compositor (compositor/docs/designcraft-integration.md §5).
+# Runs on tags `compositor-web-*` (or by hand) and attaches designcraft-web-<version>.zip + SHA256SUMS.txt to a
+# GitHub release of that tag. The compositor's prebuild downloads it through DESIGNCRAFT_WEB_URL / _SHA256.
+name: Compositor web build
+
+on:
+  push:
+    tags: ["compositor-web-*"]
+  workflow_dispatch:
+
+permissions:
+  contents: write
+
+jobs:
+  web:
+    name: Web (wasm)
+    runs-on: ubuntu-latest
+    env:
+      TRUNK_VERSION: 0.21.14
+    steps:
+      - uses: actions/checkout@v4
+      - uses: dtolnay/rust-toolchain@stable
+        with:
+          targets: wasm32-unknown-unknown
+      - uses: Swatinem/rust-cache@v2
+        with:
+          key: compositor-web
+      - name: Install trunk
+        run: |
+          curl -fsSL "https://github.com/trunk-rs/trunk/releases/download/v${TRUNK_VERSION}/trunk-x86_64-unknown-linux-gnu.tar.gz" \
+            | tar -xz -C "$HOME/.cargo/bin" trunk
+          trunk --version
+      - name: Build and zip
+        run: packaging/web/package.sh
+      - name: Checksums
+        id: sums
+        run: |
+          zip=$(find dist -name 'designcraft-web-*.zip' | head -1)
+          echo "zip=$zip" >> "$GITHUB_OUTPUT"
+          (cd "$(dirname "$zip")" && sha256sum "$(basename "$zip")" | tee SHA256SUMS.txt)
+      - uses: actions/upload-artifact@v4
+        with:
+          name: designcraft-web
+          path: |
+            ${{ steps.sums.outputs.zip }}
+            dist/**/SHA256SUMS.txt
+          if-no-files-found: error
+      - name: Release
+        if: startsWith(github.ref, 'refs/tags/')
+        env:
+          GH_TOKEN: ${{ github.token }}
+        run: |
+          tag="${GITHUB_REF_NAME}"
+          sums="$(dirname "${{ steps.sums.outputs.zip }}")/SHA256SUMS.txt"
+          gh release create "$tag" "${{ steps.sums.outputs.zip }}" "$sums" \
+            --title "Compositor web build $tag" \
+            --notes "DesignCraft web build (WebAssembly) of the compositor-bridge branch for the Local Roots compositor. Set DESIGNCRAFT_WEB_URL to the zip and DESIGNCRAFT_WEB_SHA256 from SHA256SUMS.txt." \
+            || gh release upload "$tag" "${{ steps.sums.outputs.zip }}" "$sums" --clobber

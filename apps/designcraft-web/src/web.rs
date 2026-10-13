@@ -1,6 +1,9 @@
 //! The browser shell: web `Services`, drag-and-drop, and the eframe web runner.
 
 use super::browser_policy::{has_query_flag, mime_for};
+use std::cell::RefCell;
+use std::rc::Rc;
+
 use designcraft_engine::Session;
 use designcraft_ui_egui::{DesignApp, ImportRequest, ImportedFile, Inbox, Services};
 use wasm_bindgen::JsCast as _;
@@ -56,9 +59,15 @@ pub fn start() {
                         log::info!("designcraft-web: wgpu backend {:?}", rs.adapter.get_info().backend);
                     }
                     let inbox: Inbox = Inbox::default();
-                    let mut app = DesignApp::new(Session::new(), services(inbox.clone(), cc.egui_ctx.clone()));
+                    // `window.designcraft`: the control channel as promises (see api.rs).
+                    let (control_tx, control_rx) = std::sync::mpsc::channel();
+                    let mut app = DesignApp::new(Session::new(), services(inbox.clone(), cc.egui_ctx.clone())).with_control(control_rx);
                     if has_query_flag(&query(), "sample") {
                         let _ = app.run("file.newSample", serde_json::json!({}));
+                    }
+                    let app = Rc::new(RefCell::new(app));
+                    if let Err(e) = crate::api::install(control_tx, cc.egui_ctx.clone(), app.clone()) {
+                        log::error!("designcraft-web: couldn't publish window.designcraft: {e:?}");
                     }
                     Ok(Box::new(WebShell { app, inbox }))
                 }),
@@ -80,7 +89,8 @@ fn query() -> String {
 /// Wraps the app to read dropped files asynchronously (browsers can't read them synchronously)
 /// and feed them through the inbox.
 struct WebShell {
-    app: DesignApp,
+    /// Shared with `api` so a timer can answer control requests when no frame is painted.
+    app: Rc<RefCell<DesignApp>>,
     inbox: Inbox,
 }
 
@@ -88,7 +98,7 @@ impl eframe::App for WebShell {
     fn logic(&mut self, ctx: &egui::Context, _frame: &mut eframe::Frame) {
         let dropped = ctx.input_mut(|i| std::mem::take(&mut i.raw.dropped_files));
         for f in dropped {
-            let request = self.app.import_request("drop");
+            let request = self.app.borrow().import_request("drop");
             let inbox = self.inbox.clone();
             let ctx = ctx.clone();
             wasm_bindgen_futures::spawn_local(async move {
@@ -102,16 +112,17 @@ impl eframe::App for WebShell {
                 }
             });
         }
-        self.app.logic(ctx);
+        self.app.borrow_mut().logic(ctx);
+        crate::api::poll_replies();
     }
 
     fn raw_input_hook(&mut self, ctx: &egui::Context, raw: &mut egui::RawInput) {
         designcraft_ui_egui::drop_key_name_text(raw, ctx.text_edit_focused());
-        self.app.raw_input_hook(raw);
+        self.app.borrow_mut().raw_input_hook(raw);
     }
 
     fn ui(&mut self, ui: &mut egui::Ui, _frame: &mut eframe::Frame) {
-        self.app.ui(ui);
+        self.app.borrow_mut().ui(ui);
     }
 }
 

@@ -239,6 +239,9 @@ pub struct UiState {
     #[serde(skip)]
     pub docking_opened: Option<String>,
     pub dock_expanded: bool,
+    /// Embedded in a host page (the Local Roots compositor): no search, workspace switcher, share or
+    /// Discord in the app bar, no document tabs for a single document, no Pages tab. `ui.set {embedded}`.
+    pub embedded: bool,
     pub units: Unit,
     pub workspace: String,
     /// Window › Workspace › New Workspace: saved panel arrangements.
@@ -293,6 +296,7 @@ impl Default for UiState {
     fn default() -> Self {
         UiState {
             brightness: theme::Brightness::MediumDark,
+            embedded: false,
             screen_mode: ScreenMode::Normal,
             frame_edges: true,
             rulers: true,
@@ -896,7 +900,8 @@ impl DesignApp {
                 chrome::start_screen(self, ui);
                 return;
             }
-            if !presenting {
+            // Embedded hosts show one document at a time: no tab strip for it.
+            if !presenting && !(self.ui.embedded && self.session.documents().len() <= 1) {
                 chrome::doc_tabs(self, ui);
             }
             let split_layout = (self.split && !presenting)
@@ -990,6 +995,13 @@ impl DesignApp {
             ctx.open_url(egui::OpenUrl::new_tab(url));
         }
         self.perf.frame_ms = now_ms() - t0;
+    }
+
+    /// Handle queued control requests now, outside the frame loop. Hosts whose frames may stop
+    /// (a browser tab in the background doesn't get animation frames) call this from a timer so
+    /// engine requests still get answered; requests that need a painted frame (screenshots) wait.
+    pub fn drain_control_now(&mut self, ctx: &egui::Context) {
+        self.drain_control(ctx);
     }
 
     fn drain_control(&mut self, ctx: &egui::Context) {

@@ -32,9 +32,19 @@ pub fn specs() -> Vec<CommandSpec> {
 
 fn item_json(it: &Item) -> Value {
     let b = it.bounds();
+    // The unrotated frame in spread space (`frame`: x, y, w, h) and the item's rotation (degrees,
+    // counter-clockwise), so a host can read geometry back without undoing `bounds`' rotation.
+    let d = designcraft_geom::decompose::decompose(it.xf);
+    let inner = it.inner_bounds();
+    let centre = it.xf * inner.center();
+    let (w, h) = (inner.width() * d.scale_x.abs(), inner.height() * d.scale_y.abs());
+    let corner = it.corners.corners.first().map(|c| json!({"shape": c.shape, "size": c.size}));
     let mut v = json!({
-        "id": it.id.0, "name": it.name, "kind": it.default_label(), "layer": it.layer.0,
-        "bounds": [b.x0, b.y0, b.x1, b.y1], "fill": it.fill.swatch, "stroke": {"swatch": it.stroke.swatch, "weight": it.stroke.weight},
+        "id": it.id.0, "name": it.name, "label": it.label, "kind": it.default_label(), "shape": it.shape, "layer": it.layer.0,
+        "bounds": [b.x0, b.y0, b.x1, b.y1],
+        "frame": [centre.x - w / 2.0, centre.y - h / 2.0, w, h], "rotation": d.rotation,
+        "fill": it.fill.swatch, "stroke": {"swatch": it.stroke.swatch, "weight": it.stroke.weight},
+        "opacity": it.opacity, "corners": corner,
         "locked": it.locked, "hidden": it.hidden,
     });
     match &it.content {
